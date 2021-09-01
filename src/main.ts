@@ -9,10 +9,33 @@ import { DeploymentProviderFactory } from './DeploymentProvider/DeploymentProvid
 import { IAuthorizer } from 'azure-actions-webclient/Authorizer/IAuthorizer';
 import { ValidatorFactory } from './ActionInputValidator/ValidatorFactory';
 
+// Constants
+const prometheusClient = require("prom-client");
+
+// Initialize prometheus objects
+const requestsCounter = prometheusClient.Counter({
+  name: "webapps_deploy_request_total",
+  help: "this counter keeps track of how many times this action is being called"
+});
+
+const successfulRequestsCounter = prometheusClient.Counter({
+  name: "webapps_deploy_success_total",
+  help: "this counter keeps track of how many times this action completed successfully"
+});
+
+const durationOfRequestsHistogram = prometheusClient.Histogram({
+  name: "webapps_deploy_duration",
+  help: "this answers the question - how long does this action take to complete successfully"
+});
+
 var prefix = !!process.env.AZURE_HTTP_USER_AGENT ? `${process.env.AZURE_HTTP_USER_AGENT}` : "";
 
 export async function main() {
-  let isDeploymentSuccess: boolean = true;  
+  const startTime = Date.now();
+  // Tells us how many times webapps_deploy called
+  requestsCounter.inc();
+
+  let isDeploymentSuccess: boolean = true;
 
   try {
     // Set user agent variable
@@ -58,6 +81,14 @@ export async function main() {
       core.exportVariable('AZURE_HTTP_USER_AGENT', prefix);
       
       core.debug(isDeploymentSuccess ? "Deployment Succeeded" : "Deployment failed");
+
+      if(isDeploymentSuccess) {
+        // We want to know the success vs failure ratio of calls to this action
+        successfulRequestsCounter.inc();
+        // We want to know how long the action took to complete successfully
+        const elapsedTime = Date.now() - startTime;
+        durationOfRequestsHistogram.observe(elapsedTime / 1000);
+      }
   }
 }
 
